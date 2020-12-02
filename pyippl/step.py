@@ -3,12 +3,11 @@ import functools
 
 from enum import Enum
 from typing import Callable
-from .ex import StopProcessingException, ExecutionError
+from .ex import StopProcessingException
 
 """
 Framework for image processing pipeline
 """
-
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +30,15 @@ class ProcessStep:
     If no exit function is defined, the pipe ends, but returns `True`
 
     """
+
     def __init__(self, func: Callable):
         functools.update_wrapper(self, func)
         self.func = func
 
-        self.noop: 'ProcessStep' = None        # Exit Event
-        self.do_next: 'ProcessStep' = None     # Exit and continue with
-                                               # next processing step
-        self.on_error: Callable = None         # Exit with an error state
+        self.__noop: 'ProcessStep' = None       # Exit Event
+        self.__do_next: 'ProcessStep' = None    # Exit and continue with
+                                                # next processing step
+        self.__on_error: 'ProcessStep' = None   # Exit with an error state
 
     def __call__(self, *args, **kwargs):
         """
@@ -51,15 +51,11 @@ class ProcessStep:
         except StopProcessingException as s:
             logger.info(f'End of pipe reached.')
             return False
-        except KeyError as ke:
-            # Some Step didn't get the required keys
-            logger.warning(f'Function {self.func} raised {ke}')
-            # Do not escalate, treat as NOOP
-            if self.noop is not None:
-                self.noop(*args, **kwargs)
         except Exception as e:
+            logger.warning(f'Function {self.func} raised1 {e}')
+            #
             if self.on_error is not None:
-                self.on_error(e)
+                return self.on_error(e, *args, **kwargs)
             else:
                 raise e
 
@@ -70,9 +66,40 @@ class ProcessStep:
         else:
             return True
 
+    @property
+    def noop(self):
+        return self.__noop
+
+    @noop.setter
+    def noop(self, noop: 'ProcessStep'):
+        if (noop is not None) and (type(noop) is not ProcessStep):
+            raise TypeError(f'Functions passed as noop must be of type '
+                            f'ProcessStep (got {type(noop)})')
+        self.__noop = noop
+
+    @property
+    def do_next(self):
+        return self.__do_next
+
+    @do_next.setter
+    def do_next(self, do_next: 'ProcessStep'):
+        if (do_next is not None) and (type(do_next) is not ProcessStep):
+            raise TypeError(f'Functions passed as noop must be of type '
+                            f'ProcessStep (got {type(do_next)})')
+        self.__do_next = do_next
+
+    @property
+    def on_error(self):
+        return self.__on_error
+
+    @on_error.setter
+    def on_error(self, on_error: Callable):
+        if (on_error is not None) and not callable(on_error):
+            raise TypeError(f'Functions passed as noop must be of type '
+                            f'Callable (got {type(on_error)})')
+        self.__on_error = on_error
+
 
 class ProcessReturn(Enum):
     NOOP = 0
     NEXT = 1
-
-
